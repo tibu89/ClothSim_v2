@@ -7,11 +7,14 @@
 #include <helper_cuda.h>
 #include <helper_math.h>
 
-//#include <glm/glm.hpp>
+#include <glm\glm.hpp>
 
 #define NUM_ITERS 8
 
 //kernels
+
+//shader ids
+extern GLuint programID, colorID;
 
 __global__ void k_cloth_init( float4 *positions, float2 spring_dim, uint2 num_particles, Cloth::starting_position start_pos, float mass, Cloth::fixed_particles fixed)
 {
@@ -376,45 +379,46 @@ void Cloth::deleteVBOs()
 
 void Cloth::draw()
 {
+	glm::vec3 color( 0.0f, 0.0f, 0.0f );
+
+	glEnableVertexAttribArray( 0 );
     glBindBuffer( GL_ARRAY_BUFFER, vbo_positions );
-    glVertexPointer(3, GL_FLOAT, sizeof( float4 ), 0);
-    glEnableClientState( GL_VERTEX_ARRAY );
+	glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof( float4 ) , (void*)0 );
+
+	glEnableVertexAttribArray( 1 );
     glBindBuffer( GL_ARRAY_BUFFER, vbo_normals );
-    glNormalPointer(GL_FLOAT, sizeof( float4 ), 0);
-    glEnableClientState( GL_NORMAL_ARRAY );
-    if( animate ) 
+	glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, sizeof( float4 ) , (void*)0 );
+    
+	if( animate ) 
     {
         timestep();
     }
+
     if( !wireframe )
     {
-        glEnable( GL_LIGHTING );
-        glEnable( GL_LIGHT0 );
+		color = glm::vec3( 0.8f, 0.0f, 0.0f );
+    }
 
-        glColor3f( 0.8f, 0.0f, 0.0f );
-    }
-    else
-    {
-        glColor3f( 0.0f, 0.0f, 0.0f );
-    }
-    //glDrawArrays( GL_POINTS, 0, num_particles.x * num_particles.y );
+	glUniform3fv( colorID, 1, &color[0] );
+
     glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color1 );
     glDrawElements( GL_TRIANGLES, index_color1.size(), GL_UNSIGNED_SHORT, 0 );
 
     if( !wireframe )
     {
-        glColor3f( 0.0f, 0.0f, 0.8f );
+        color = glm::vec3( 0.0f, 0.0f, 0.8f );
     }
+
+	glUniform3fv( colorID, 1, &color[0] );
+
     glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color2 );
     glDrawElements( GL_TRIANGLES, index_color2.size(), GL_UNSIGNED_SHORT, 0 );
 
     glBindBuffer( GL_ARRAY_BUFFER, 0 );
     glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, 0 );
 
-    glDisableClientState( GL_VERTEX_ARRAY );
-    glDisableClientState( GL_NORMAL_ARRAY );
-
-    glDisable(GL_LIGHTING);
+	glDisableVertexAttribArray( 0 );
+	glDisableVertexAttribArray( 1 );
 }
 
 Cloth::~Cloth()

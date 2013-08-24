@@ -25,6 +25,11 @@
 //Simple OpenGL Image Library
 #include <soil.h>
 
+//glm
+#include <glm\glm.hpp>
+#include <glm\gtc\matrix_transform.hpp>
+
+
 #include "cloth.h"
 
 //time
@@ -32,15 +37,14 @@ double last_time = 0.0f, current_time;
 int num_frames = 0;
 
 //misc
-unsigned int w_width = 512;
-unsigned int w_height = 512;
-float light_pos[] = {1.0f, 0.0f, 1.0f, 1.0f};
+unsigned int w_width = 512 + 512 / 2;
+unsigned int w_height = 512 + 512 / 2;
 
 // mouse
 int mouse_old_x, mouse_old_y;
 int mouse_buttons = 0;
-float rotate_x = 0.0f, rotate_y = 0.0f;
-float translate_y = 0.0f, translate_z = -30.0f;
+float rotate_x = 0.0f, rotate_y = 3.14159f;
+float height = 0.0f, radius = 30.0f;
 
 // forward declarations
 bool initGL( int *argc, char **argv );
@@ -50,9 +54,25 @@ void mouse( int button, int state, int x, int y );
 void motion( int x, int y );
 void reshape( int w, int h );
 
+void update_camera_position();
+
+glm::mat4 P;
+glm::vec3 camera_pos;
+glm::vec3 focus_pos;
+glm::vec3 up;
+glm::vec3 right;
+
+glm::vec4 light_pos( 0.0f, 1.0f, 0.0f, 0.0f );
+
 //
 Cloth *cloth;
 GLuint tex_2D;
+
+//shader ids
+GLuint programID;
+GLuint MVPmatrixID, model_matrixID, view_matrixID;
+GLuint colorID;
+GLuint light_posID;
 
 bool checkHW(char *name, const char *gpuType, int dev)
 {
@@ -153,29 +173,94 @@ bool initGL(int *argc, char **argv)
     // default initialization
     glClearColor(0.52f, 0.80f, 0.97f, 1.0f);
     glEnable( GL_DEPTH_TEST );
-	//glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
-    glEnable( GL_COLOR_MATERIAL );
-	//glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
-	//glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
-	//glEnable( GL_NORMALIZE );
-	glEnable( GL_LIGHTING );
-	glEnable( GL_LIGHT0 );
-	glLightfv( GL_LIGHT0, GL_POSITION, light_pos );
-	glDisable( GL_LIGHTING );
-	glDisable( GL_LIGHT0 );
     glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
 
     // viewport
     glViewport(0, 0, w_width, w_height);
 
     // projection
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    gluPerspective(60.0, (GLfloat)w_width / (GLfloat) w_height, 0.1, 1000.0);
+	P = glm::perspective( 60.0f, (float) w_width / (float) w_height, 0.1f, 1000.0f );
+	update_camera_position();
 
     SDK_CHECK_ERROR_GL();
 
     return true;
+}
+
+GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path){
+ 
+    // Create the shaders
+    GLuint VertexShaderID = glCreateShader(GL_VERTEX_SHADER);
+    GLuint FragmentShaderID = glCreateShader(GL_FRAGMENT_SHADER);
+ 
+    // Read the Vertex Shader code from the file
+    std::string VertexShaderCode;
+    std::ifstream VertexShaderStream(vertex_file_path, std::ios::in);
+    if(VertexShaderStream.is_open())
+    {
+        std::string Line = "";
+        while(getline(VertexShaderStream, Line))
+            VertexShaderCode += "\n" + Line;
+        VertexShaderStream.close();
+    }
+ 
+    // Read the Fragment Shader code from the file
+    std::string FragmentShaderCode;
+    std::ifstream FragmentShaderStream(fragment_file_path, std::ios::in);
+    if(FragmentShaderStream.is_open()){
+        std::string Line = "";
+        while(getline(FragmentShaderStream, Line))
+            FragmentShaderCode += "\n" + Line;
+        FragmentShaderStream.close();
+    }
+ 
+    GLint Result = GL_FALSE;
+    int InfoLogLength;
+ 
+    // Compile Vertex Shader
+    printf("Compiling shader : %s\n", vertex_file_path);
+    char const * VertexSourcePointer = VertexShaderCode.c_str();
+    glShaderSource(VertexShaderID, 1, &VertexSourcePointer , NULL);
+    glCompileShader(VertexShaderID);
+ 
+    // Check Vertex Shader
+    glGetShaderiv(VertexShaderID, GL_COMPILE_STATUS, &Result);
+    glGetShaderiv(VertexShaderID, GL_INFO_LOG_LENGTH, &InfoLogLength);
+    std::vector<char> VertexShaderErrorMessage(InfoLogLength);
+    glGetShaderInfoLog(VertexShaderID, InfoLogLength, NULL, &VertexShaderErrorMessage[0]);
+    fprintf(stdout, "%s\n", &VertexShaderErrorMessage[0]);
+ 
+    // Compile Fragment Shader
+    printf("Compiling shader : %s\n", fragment_file_path);
+    char const * FragmentSourcePointer = FragmentShaderCode.c_str();
+    glShaderSource(FragmentShaderID, 1, &FragmentSourcePointer , NULL);
+    glCompileShader(FragmentShaderID);
+ 
+    // Check Fragment Shader
+    glGetShaderiv(FragmentShaderID, GL_COMPILE_STATUS, &Result);
+    glGetShaderiv(FragmentShaderID, GL_INFO_LOG_LENGTH, &InfoLogLength);
+    std::vector<char> FragmentShaderErrorMessage(InfoLogLength);
+    glGetShaderInfoLog(FragmentShaderID, InfoLogLength, NULL, &FragmentShaderErrorMessage[0]);
+    fprintf(stdout, "%s\n", &FragmentShaderErrorMessage[0]);
+ 
+    // Link the program
+    fprintf(stdout, "Linking program\n");
+    GLuint ProgramID = glCreateProgram();
+    glAttachShader(ProgramID, VertexShaderID);
+    glAttachShader(ProgramID, FragmentShaderID);
+    glLinkProgram(ProgramID);
+ 
+    // Check the program
+    glGetProgramiv(ProgramID, GL_LINK_STATUS, &Result);
+    glGetProgramiv(ProgramID, GL_INFO_LOG_LENGTH, &InfoLogLength);
+    std::vector<char> ProgramErrorMessage( max(InfoLogLength, int(1)) );
+    glGetProgramInfoLog(ProgramID, InfoLogLength, NULL, &ProgramErrorMessage[0]);
+    fprintf(stdout, "%s\n", &ProgramErrorMessage[0]);
+ 
+    glDeleteShader(VertexShaderID);
+    glDeleteShader(FragmentShaderID);
+ 
+    return ProgramID;
 }
 
 void show_vram_usage()
@@ -193,6 +278,13 @@ int main( int argc, char **argv )
 	{
 		exit( 1 );
 	}
+
+	programID = LoadShaders( "../common/shaders/cloth_vertex.vs", "../common/shaders/cloth_fragment.fs" );
+	MVPmatrixID = glGetUniformLocation( programID, "MVP" );
+	model_matrixID = glGetUniformLocation( programID, "M" );
+	view_matrixID = glGetUniformLocation( programID, "V" );
+	colorID = glGetUniformLocation( programID, "my_color" );
+	light_posID = glGetUniformLocation( programID, "light_pos_worldspace" );
 
 	cudaGLSetGLDevice( gpuGetMaxGflopsDeviceId() );
 
@@ -275,11 +367,19 @@ void mouse(int button, int state, int x, int y)
     {
         if( button == 3 )
         {
-            translate_z += 0.5;
+            radius -= 0.5;
+
+			if( radius < 1 ) radius = 1.0f;
+
+			update_camera_position();
         }
         else if ( button == 4 )
         {
-            translate_z -= 0.5;
+            radius += 0.5;
+
+			if( radius < 1 ) radius = 1.0f;
+
+			update_camera_position();
         }
         else
         {
@@ -303,16 +403,24 @@ void motion(int x, int y)
 
     if (mouse_buttons & 1)
     {
-        rotate_x += dy * 0.2f;
-        rotate_y += dx * 0.2f;
+        rotate_x -= dy * 0.01f;
+        rotate_y -= dx * 0.01f;
+
+		update_camera_position();
     }
     else if (mouse_buttons & 4)
     {
-        translate_y += dy * 0.05f;
+        focus_pos.y += dy * 0.05f;
+
+		update_camera_position();
     }
     else if (mouse_buttons & 2)
     {
-        translate_z -= dy * 0.05f;
+        radius += dy * 0.05f;
+
+		if( radius < 1 ) radius = 1.0f;
+
+		update_camera_position();
     }
 
     mouse_old_x = x;
@@ -323,19 +431,25 @@ void display()
 {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+	glUseProgram( programID );
+
     // set view matrix
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    glTranslatef(0.0, translate_y, translate_z);
-    glRotatef(rotate_x, 1.0, 0.0, 0.0);
-    glRotatef(rotate_y, 0.0, 1.0, 0.0);
+    glm::mat4 V = glm::lookAt( camera_pos, focus_pos, up );
+
+	glm::mat4 M( 1.0f );
+	glm::mat4 MVP = P * V * M;
+
+	glUniformMatrix4fv( MVPmatrixID, 1, GL_FALSE, &MVP[0][0] );
+	glUniformMatrix4fv( model_matrixID, 1, GL_FALSE, &M[0][0] );
+	glUniformMatrix4fv( view_matrixID, 1, GL_FALSE, &V[0][0] );
+	glUniform4fv( light_posID, 1, &light_pos[0] ); 
 
     cloth->draw(); 
 	current_time = glutGet( GLUT_ELAPSED_TIME );
 	num_frames++;
 	if( current_time - last_time > 1000.0f )
 	{
-		printf("%f\n", (current_time - last_time) / (double)num_frames );
+		//printf("%f\n", (current_time - last_time) / (double)num_frames );
 		num_frames = 0;
 		last_time = current_time;
 	}
@@ -349,7 +463,18 @@ void reshape(int width, int height)
 	w_width = width;
 	w_height = height;
 	glViewport( 0, 0, (GLsizei)w_width, (GLsizei)w_height );
-	glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    gluPerspective(60.0, (GLfloat)w_width / (GLfloat) w_height, 0.1, 1000.0);
+	P = glm::perspective( 60.0f, (float) w_width / (float) w_height, 0.1f, 1000.0f );
+}
+
+void update_camera_position()
+{
+	glm::vec3 direction( cos( rotate_x ) * sin( rotate_y ),
+						 sin( rotate_x ),
+						 cos( rotate_x ) * cos( rotate_y ) );
+
+	camera_pos = focus_pos - radius * direction;
+	right = glm::vec3(	sin( rotate_y - 3.14159f / 2.0f ),
+						0,
+						cos( rotate_y - 3.14159f / 2.0f ) );
+	up = glm::cross( right, direction );
 }

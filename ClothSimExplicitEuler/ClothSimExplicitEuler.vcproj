@@ -196,6 +196,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\common\shaders\cloth_fragment.fs"
+				>
+			</File>
+			<File
+				RelativePath="..\common\shaders\cloth_vertex.vs"
+				>
+			</File>
+			<File
 				RelativePath=".\main.cu"
 				>
 			</File>
