@@ -37,8 +37,8 @@ double last_time = 0.0f, current_time;
 int num_frames = 0;
 
 //misc
-unsigned int w_width = 512 + 512 / 2;
-unsigned int w_height = 512 + 512 / 2;
+unsigned int w_width = 512;
+unsigned int w_height = 512;
 
 // mouse
 int mouse_old_x, mouse_old_y;
@@ -62,17 +62,19 @@ glm::vec3 focus_pos;
 glm::vec3 up;
 glm::vec3 right;
 
-glm::vec4 light_pos( 0.0f, 1.0f, 0.0f, 0.0f );
+glm::vec4 light_pos( 20.0f, 20.0f, 20.0f, 1.0f );
 
 //
 Cloth *cloth;
-GLuint tex_2D;
 
 //shader ids
 GLuint programID;
 GLuint MVPmatrixID, model_matrixID, view_matrixID;
 GLuint colorID;
 GLuint light_posID;
+GLuint normal_sign_id;
+
+GLuint tex_normal_map, tex_normal_map_id;
 
 bool checkHW(char *name, const char *gpuType, int dev)
 {
@@ -168,12 +170,11 @@ bool initGL(int *argc, char **argv)
         return false;
     }
 
-
-
     // default initialization
     glClearColor(0.52f, 0.80f, 0.97f, 1.0f);
-    glEnable( GL_DEPTH_TEST );
-    glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+	glEnable( GL_DEPTH_TEST );
+	glFrontFace( GL_CW );
+    glPolygonMode( GL_FRONT, GL_LINE );
 
     // viewport
     glViewport(0, 0, w_width, w_height);
@@ -181,6 +182,20 @@ bool initGL(int *argc, char **argv)
     // projection
 	P = glm::perspective( 60.0f, (float) w_width / (float) w_height, 0.1f, 1000.0f );
 	update_camera_position();
+
+	tex_normal_map = SOIL_load_OGL_texture(
+		"..\\common\\data\\cloth_normal_map3.jpg",
+		SOIL_LOAD_AUTO,
+		SOIL_CREATE_NEW_ID,
+		SOIL_FLAG_TEXTURE_REPEATS | SOIL_FLAG_MIPMAPS | SOIL_FLAG_NTSC_SAFE_RGB | SOIL_FLAG_COMPRESS_TO_DXT | SOIL_FLAG_INVERT_Y
+	);
+
+	if( tex_normal_map == 0 )
+	{
+		printf( "SOIL load error: '%s'\n", SOIL_last_result() );
+	}
+
+	//glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, fLargest );
 
     SDK_CHECK_ERROR_GL();
 
@@ -285,6 +300,8 @@ int main( int argc, char **argv )
 	view_matrixID = glGetUniformLocation( programID, "V" );
 	colorID = glGetUniformLocation( programID, "my_color" );
 	light_posID = glGetUniformLocation( programID, "light_pos_worldspace" );
+	tex_normal_map_id = glGetUniformLocation( programID, "normal_map_sampler" );
+	normal_sign_id = glGetUniformLocation( programID, "normal_sign" );
 
 	cudaGLSetGLDevice( gpuGetMaxGflopsDeviceId() );
 
@@ -438,7 +455,6 @@ void display()
 
 	glm::mat4 M( 1.0f );
 	glm::mat4 MVP = P * V * M;
-
 	glUniformMatrix4fv( MVPmatrixID, 1, GL_FALSE, &MVP[0][0] );
 	glUniformMatrix4fv( model_matrixID, 1, GL_FALSE, &M[0][0] );
 	glUniformMatrix4fv( view_matrixID, 1, GL_FALSE, &V[0][0] );
@@ -446,6 +462,8 @@ void display()
 
     cloth->draw(); 
 	current_time = glutGet( GLUT_ELAPSED_TIME );
+	light_pos[0] = 20.0f * sin( current_time / 350 );
+
 	num_frames++;
 	if( current_time - last_time > 1000.0f )
 	{

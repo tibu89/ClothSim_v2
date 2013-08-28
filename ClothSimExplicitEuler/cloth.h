@@ -41,14 +41,6 @@ public:
 	void toggle_wireframe()
 	{
 		wireframe = !wireframe;
-		if( wireframe )
-		{
-			glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-		}
-		else
-		{
-			glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
-		}
 	}
 
 private:
@@ -66,6 +58,7 @@ private:
     NeighbourData *d_neighbourhood;
 
     std::vector<unsigned short> index_color1, index_color2;
+	std::vector<GLfloat> uv;
 
     uint2 dimensions;
     uint2 num_particles;
@@ -79,7 +72,7 @@ private:
 
     float cloth_weight;
 
-    GLuint vbo_positions, vbo_normals;
+    GLuint vbo_positions, vbo_normals, vbo_uv;
 
     GLuint element_color1;
     GLuint element_color2;

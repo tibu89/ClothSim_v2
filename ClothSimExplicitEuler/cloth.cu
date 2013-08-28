@@ -14,7 +14,7 @@
 //kernels
 
 //shader ids
-extern GLuint programID, colorID;
+extern GLuint programID, colorID, tex_normal_map, tex_normal_map_id, normal_sign_id;
 
 __global__ void k_cloth_init( float4 *positions, float2 spring_dim, uint2 num_particles, Cloth::starting_position start_pos, float mass, Cloth::fixed_particles fixed)
 {
@@ -79,10 +79,7 @@ __global__ void k_compute_normals(float4 *positions, float4 *normals, uint2 num_
     unsigned int pos;
     pos = absIndex.x + absIndex.y * num_particles.x;
 
-	if( absIndex.x >= num_particles.x || absIndex.y >= num_particles.y )
-        return;
-
-    normals[pos] = make_float4( 0.0f, 0.0f, 0.0f, 0.0f );
+	normals[pos] = make_float4( 0.0f, 0.0f, 0.0f, 0.0f );
     float4 temp;
 	float3 curr_norm;
 
@@ -105,7 +102,7 @@ __global__ void k_compute_normals(float4 *positions, float4 *normals, uint2 num_
         AC = C - A;
 
         norm = cross( AB, AC );
-        norm = normalize( norm );
+        //norm = normalize( norm );
 
         temp = normals[pos];
         curr_norm = make_float3( temp.x, temp.y, temp.z );
@@ -134,7 +131,7 @@ __global__ void k_compute_normals(float4 *positions, float4 *normals, uint2 num_
         AC = C - A;
 
         norm = cross( AB, AC );
-        //norm = normalize( norm );
+        norm = normalize( norm );
 
         temp = normals[pos_neigh3];
         curr_norm = make_float3( temp.x, temp.y, temp.z );
@@ -150,15 +147,6 @@ __global__ void k_compute_normals(float4 *positions, float4 *normals, uint2 num_
         curr_norm = make_float3( temp.x, temp.y, temp.z );
         curr_norm = curr_norm + norm;
         normals[pos_neigh2] = make_float4( curr_norm.x, curr_norm.y, curr_norm.z, temp.w );
-        __syncthreads();
-    }
-    else
-    {
-		__syncthreads();
-        __syncthreads();
-        __syncthreads();
-        __syncthreads();
-        __syncthreads();
         __syncthreads();
     }
 }
@@ -206,13 +194,17 @@ __device__ float3 compute_spring_accelerations( float3 pos_i, float3 v_i, float4
         p++;
     }
 
-    //rez = rez - KD * v_i;
-
     return rez;
 }
 
+__device__ float3 compute_wind( float3 normal, unsigned int num_neighbours, float mass )
+{
+	float3 wind_dir = make_float3( 0.0f, 0.0f, -0.1f );
+	return mass * num_neighbours * normal * dot( normal, wind_dir );
+}
+
 //euler temporar, doar cu gravitatie
-__global__ void euler_integration( float4 *positions, float4 *velocities, uint2 *neighbours, NeighbourData *neighbourhood, uint2 num_particles, float dt, float damp, float mass )
+__global__ void euler_integration( float4 *positions, float4 *velocities, float4 *normals, uint2 *neighbours, NeighbourData *neighbourhood, uint2 num_particles, float dt, float damp, float mass )
 {
     uint2 absIndex;
     unsigned int absId;
@@ -236,7 +228,10 @@ __global__ void euler_integration( float4 *positions, float4 *velocities, uint2 
     float3 v1;
     float3 v2;
     float inv_mass;
+	float3 N;
 
+	temp = normals[absId];
+	N = make_float3( temp.x, temp.y, temp.z );
     temp = positions[absId];
     p1 = make_float3( temp.x, temp.y, temp.z );
     inv_mass = temp.w;
@@ -248,7 +243,7 @@ __global__ void euler_integration( float4 *positions, float4 *velocities, uint2 
 
     uint2 neighbour_data_pointer = neighbours[absId];
 
-	a1 = a1 + v1 * damp + compute_spring_accelerations( p1, v1, positions, velocities, neighbourhood + neighbour_data_pointer.x, neighbour_data_pointer.y ); 
+	a1 = a1 + v1 * damp + compute_spring_accelerations( p1, v1, positions, velocities, neighbourhood + neighbour_data_pointer.x, neighbour_data_pointer.y ) + compute_wind( N, neighbour_data_pointer.y, mass ); 
     p2 = p1 + dt * v1;
     v2 = v1 + dt * a1 * inv_mass;
 
@@ -259,7 +254,7 @@ __global__ void euler_integration( float4 *positions, float4 *velocities, uint2 
 
     __syncthreads();
 
-    a2 = a2 + v2 * damp + compute_spring_accelerations( p2, v2, positions, velocities, neighbourhood + neighbour_data_pointer.x, neighbour_data_pointer.y ); 
+	a2 = a2 + v2 * damp + compute_spring_accelerations( p2, v2, positions, velocities, neighbourhood + neighbour_data_pointer.x, neighbour_data_pointer.y ) + compute_wind( N, neighbour_data_pointer.y, mass ); 
     rez = p1 + ( v1 + v2 ) * dt * 0.5f;
     positions[absId] = make_float4( rez.x, rez.y, rez.z, inv_mass );
     rez = v1 + ( a1 + a2 ) * dt * 0.5f * inv_mass;
@@ -302,6 +297,8 @@ void Cloth::init_cloth()
     particle_count = num_particles.x * num_particles.y;
 	particle_mass = cloth_mass / particle_count;
 
+	GLfloat x_step = 1.0f / (GLfloat)num_particles.x, y_step = 1.0f / (GLfloat)num_particles.y;
+
     for( unsigned int v = 0; v < num_particles.y - 1; ++v )
     {
         for( unsigned int u = 0; u < num_particles.x - 1; ++u )
@@ -324,6 +321,15 @@ void Cloth::init_cloth()
             vec->push_back( u + 1 + v      * num_particles.x );
         }
     }
+
+	for( unsigned int v = 0; v < num_particles.y; ++v )
+	{
+		for( unsigned int u = 0; u < num_particles.x; ++u )
+		{
+			uv.push_back( u * x_step * 2 );
+			uv.push_back( v * y_step * 2 );
+		}
+	}
 
     block = dim3( 16, 16, 1 );
     grid = dim3( num_particles.x / block.x + ( num_particles.x % block.x > 0 ),
@@ -348,6 +354,11 @@ void Cloth::createVBOs()
     glBindBuffer( GL_ARRAY_BUFFER, vbo_normals );
     glBufferData( GL_ARRAY_BUFFER, size, 0, GL_DYNAMIC_DRAW );
     checkCudaErrors( cudaGraphicsGLRegisterBuffer( &vbo_res_normals, vbo_normals, cudaGraphicsRegisterFlagsNone ) );
+
+	glGenBuffers( 1, &vbo_uv );
+
+	glBindBuffer( GL_ARRAY_BUFFER, vbo_uv );
+	glBufferData( GL_ARRAY_BUFFER, uv.size() * sizeof( GLfloat ), &uv[0], GL_STATIC_DRAW );
 
     glBindBuffer( GL_ARRAY_BUFFER, 0 );
 
@@ -388,37 +399,82 @@ void Cloth::draw()
 	glEnableVertexAttribArray( 1 );
     glBindBuffer( GL_ARRAY_BUFFER, vbo_normals );
 	glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, sizeof( float4 ) , (void*)0 );
+
+	glEnableVertexAttribArray( 2 );
+	glBindBuffer( GL_ARRAY_BUFFER, vbo_uv );
+	glVertexAttribPointer( 2, 2, GL_FLOAT, GL_FALSE, 0, (void*)0 );
+
+	glActiveTexture( GL_TEXTURE0 );
+	glBindTexture( GL_TEXTURE_2D, tex_normal_map );
+	glUniform1i( tex_normal_map_id, 0 );
     
 	if( animate ) 
     {
         timestep();
     }
 
-    if( !wireframe )
+	if( !wireframe )
     {
-		color = glm::vec3( 0.8f, 0.0f, 0.0f );
-    }
+		glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
 
-	glUniform3fv( colorID, 1, &color[0] );
+		glEnable( GL_CULL_FACE );
+		glCullFace( GL_BACK );
 
-    glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color1 );
-    glDrawElements( GL_TRIANGLES, index_color1.size(), GL_UNSIGNED_SHORT, 0 );
+		glUniform1i( normal_sign_id, 1 );
 
-    if( !wireframe )
-    {
+		color = glm::vec3( 0.8f, 0.0f, 0.0f );    
+
+		glUniform3fv( colorID, 1, &color[0] );
+
+		glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color1 );
+		glDrawElements( GL_TRIANGLES, index_color1.size(), GL_UNSIGNED_SHORT, 0 );
+    
         color = glm::vec3( 0.0f, 0.0f, 0.8f );
-    }
 
-	glUniform3fv( colorID, 1, &color[0] );
+		glUniform3fv( colorID, 1, &color[0] );
 
-    glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color2 );
-    glDrawElements( GL_TRIANGLES, index_color2.size(), GL_UNSIGNED_SHORT, 0 );
+		glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color2 );
+		glDrawElements( GL_TRIANGLES, index_color2.size(), GL_UNSIGNED_SHORT, 0 );
+
+		glCullFace( GL_FRONT );
+
+		glUniform1i( normal_sign_id, -1 );
+
+		color = glm::vec3( 0.8f, 0.0f, 0.0f );    
+
+		glUniform3fv( colorID, 1, &color[0] );
+
+		glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color1 );
+		glDrawElements( GL_TRIANGLES, index_color1.size(), GL_UNSIGNED_SHORT, 0 );
+    
+        color = glm::vec3( 0.0f, 0.0f, 0.8f );
+
+		glUniform3fv( colorID, 1, &color[0] );
+
+		glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color2 );
+		glDrawElements( GL_TRIANGLES, index_color2.size(), GL_UNSIGNED_SHORT, 0 );
+
+		glDisable( GL_CULL_FACE );
+	}
+	else
+	{
+		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+
+		glUniform3fv( colorID, 1, &color[0] );
+
+		glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color1 );
+		glDrawElements( GL_TRIANGLES, index_color1.size(), GL_UNSIGNED_SHORT, 0 );
+    
+		glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color2 );
+		glDrawElements( GL_TRIANGLES, index_color2.size(), GL_UNSIGNED_SHORT, 0 );
+	}
 
     glBindBuffer( GL_ARRAY_BUFFER, 0 );
     glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, 0 );
 
 	glDisableVertexAttribArray( 0 );
 	glDisableVertexAttribArray( 1 );
+	glDisableVertexAttribArray( 2 );
 }
 
 Cloth::~Cloth()
@@ -444,7 +500,7 @@ void Cloth::timestep()
 
     for( int i = 0; i < NUM_ITERS; ++i )
     {
-        euler_integration<<<grid,block>>>( d_positions, d_velocities, d_neighbours, d_neighbourhood, num_particles, dt, damp, particle_mass );
+        euler_integration<<<grid,block>>>( d_positions, d_velocities, d_normals, d_neighbours, d_neighbourhood, num_particles, dt, damp, particle_mass );
 
         err = cudaGetLastError();
         if( err )

@@ -150,7 +150,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="cudart.lib freeglut.lib glew32.lib kernel32.lib user32.lib libSOIL.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib opengl32.lib glu32.lib $(NOINHERIT)"
+				AdditionalDependencies="cudart.lib freeglut.lib glew32.lib kernel32.lib user32.lib SOIL.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib opengl32.lib glu32.lib $(NOINHERIT)"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
 				AdditionalLibraryDirectories="$(SolutionDir)\common\lib\win32\;$(CUDA_PATH)\lib\win32\"
