@@ -18,6 +18,11 @@ struct NeighbourData
 	float ks, kd;
 };
 
+struct TrianglePairData
+{
+	float4 N[2];
+};
+
 class Cloth
 {
 public:
@@ -42,11 +47,15 @@ public:
 	{
 		wireframe = !wireframe;
 	}
+	void toggle_wind()
+	{
+		wind = !wind;
+	}
 
 private:
     starting_position start_pos;
 	fixed_particles fixed_pos;
-    bool animate, wireframe;
+    bool animate, wireframe, wind;
     float ks, kd, dt, damp;
 	float cloth_mass, particle_mass;
     float4 *d_velocities;
@@ -56,6 +65,8 @@ private:
     uint2 *h_neighbours, *d_neighbours;
     std::vector<NeighbourData> h_neighbourhood;
     NeighbourData *d_neighbourhood;
+	TrianglePairData *d_triangle_normals;
+	float4 *d_wind_str;
 
     std::vector<unsigned short> index_color1, index_color2;
 	std::vector<GLfloat> uv;
@@ -67,6 +78,8 @@ private:
 
     dim3 block;
     dim3 grid;
+
+	dim3 half_grid;
 
     unsigned int num_triangles_half;
 

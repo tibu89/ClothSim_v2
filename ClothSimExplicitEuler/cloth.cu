@@ -70,7 +70,7 @@ __global__ void k_cloth_init( float4 *positions, float2 spring_dim, uint2 num_pa
     positions[absIndex.x + absIndex.y * num_particles.x] = pos;
 }
 
-__global__ void k_compute_normals(float4 *positions, float4 *normals, uint2 num_particles)
+__global__ void k_compute_triangle_normals(float4 *positions, TrianglePairData *triangle_normals, uint2 num_particles)
 {
     int2 absIndex;
     absIndex.x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -79,10 +79,7 @@ __global__ void k_compute_normals(float4 *positions, float4 *normals, uint2 num_
     unsigned int pos;
     pos = absIndex.x + absIndex.y * num_particles.x;
 
-	normals[pos] = make_float4( 0.0f, 0.0f, 0.0f, 0.0f );
     float4 temp;
-	float3 curr_norm;
-
     if( absIndex.x < ( num_particles.x - 1 ) && absIndex.y < ( num_particles.y - 1 ) )
     {
         unsigned int pos_neigh1, pos_neigh2, pos_neigh3;
@@ -92,63 +89,79 @@ __global__ void k_compute_normals(float4 *positions, float4 *normals, uint2 num_
 
         float3 A,B,C, AB, AC, norm;
         temp = positions[pos];
-        A = make_float3( temp.x, temp. y, temp.z );
+        A = make_float3( temp.x, temp.y, temp.z );
         temp = positions[pos_neigh2];
-        B = make_float3( temp.x, temp. y, temp.z );
+        B = make_float3( temp.x, temp.y, temp.z );
         temp = positions[pos_neigh1];
-        C = make_float3( temp.x, temp. y, temp.z );
+        C = make_float3( temp.x, temp.y, temp.z );
 
         AB = B - A;
         AC = C - A;
 
         norm = cross( AB, AC );
-        //norm = normalize( norm );
-
-        temp = normals[pos];
-        curr_norm = make_float3( temp.x, temp.y, temp.z );
-        curr_norm = curr_norm + norm;
-        normals[pos] = make_float4( curr_norm.x, curr_norm.y, curr_norm.z, temp.w );
-        __syncthreads();
-        temp = normals[pos_neigh1];
-        curr_norm = make_float3( temp.x, temp.y, temp.z );
-        curr_norm = curr_norm + norm;
-        normals[pos_neigh1] = make_float4( curr_norm.x, curr_norm.y, curr_norm.z, temp.w );
-        __syncthreads();
-        temp = normals[pos_neigh2];
-        curr_norm = make_float3( temp.x, temp.y, temp.z );
-        curr_norm = curr_norm + norm;
-        normals[pos_neigh2] = make_float4( curr_norm.x, curr_norm.y, curr_norm.z, temp.w );
-        __syncthreads();
+		temp.w = length( norm ) / 2;
+		norm = normalize( norm );
+		temp.x = norm.x; temp.y = norm.y; temp.z = norm.z;
+		triangle_normals[pos].N[0] = temp;
 
         temp = positions[pos_neigh3];
-        A = make_float3( temp.x, temp. y, temp.z );
+        A = make_float3( temp.x, temp.y, temp.z );
         temp = positions[pos_neigh1];
-        B = make_float3( temp.x, temp. y, temp.z );
+        B = make_float3( temp.x, temp.y, temp.z );
         temp = positions[pos_neigh2];
-        C = make_float3( temp.x, temp. y, temp.z );
+        C = make_float3( temp.x, temp.y, temp.z );
 
         AB = B - A;
         AC = C - A;
 
         norm = cross( AB, AC );
-        norm = normalize( norm );
-
-        temp = normals[pos_neigh3];
-        curr_norm = make_float3( temp.x, temp.y, temp.z );
-        curr_norm = curr_norm + norm;
-        normals[pos_neigh3] = make_float4( curr_norm.x, curr_norm.y, curr_norm.z, temp.w );
-        __syncthreads();
-        temp = normals[pos_neigh1];
-        curr_norm = make_float3( temp.x, temp.y, temp.z );
-        curr_norm = curr_norm + norm;
-        normals[pos_neigh1] = make_float4( curr_norm.x, curr_norm.y, curr_norm.z, temp.w );
-        __syncthreads();
-        temp = normals[pos_neigh2];
-        curr_norm = make_float3( temp.x, temp.y, temp.z );
-        curr_norm = curr_norm + norm;
-        normals[pos_neigh2] = make_float4( curr_norm.x, curr_norm.y, curr_norm.z, temp.w );
-        __syncthreads();
+		temp.w = length( norm ) / 2;
+		norm = normalize( norm );
+		temp.x = norm.x; temp.y = norm.y; temp.z = norm.z;
+		triangle_normals[pos].N[1] = temp;
     }
+}
+
+__device__ unsigned int offset_x[] = { 0, 1, 0, 1 };
+__device__ unsigned int offset_y[] = { 0, 0, 1, 1 };
+
+__global__ void k_compute_normals_no_overlap( TrianglePairData *triangle_normals, float4 *normals, uint2 num_particles, unsigned int offset_index, int tr )
+{
+	int2 absIndex, normal_index;
+    absIndex.x = blockIdx.x * blockDim.x + threadIdx.x;
+    absIndex.y = blockIdx.y * blockDim.y + threadIdx.y;
+
+	unsigned int off_x = offset_x[offset_index], off_y = offset_y[offset_index];
+
+	normal_index.x = absIndex.x * 2 + off_x;
+	normal_index.y = absIndex.y * 2 + off_y;
+
+	float4 temp;
+
+	if( normal_index.x < ( num_particles.x - 1 ) && normal_index.y < ( num_particles.y - 1 ) )
+	{
+		unsigned int pos = normal_index.x  + normal_index.y * num_particles.x;
+		unsigned p1, p2, p3;
+
+		if( tr == 0 )
+		{
+			p1 = pos;
+			p2 = pos + 1;
+			p3 = pos + num_particles.x;
+		}
+		else
+		{
+			p1 = pos + 1;
+			p2 = pos + num_particles.x;
+			p3 = pos + num_particles.x + 1;
+		}
+
+		temp = triangle_normals[pos].N[tr];
+		
+		normals[p1] += temp;
+		normals[p2] += temp;
+		normals[p3] += temp;
+	}	
 }
 
 __global__ void k_normalize_everything( float4 *normals, uint2 num_particles )
@@ -197,14 +210,15 @@ __device__ float3 compute_spring_accelerations( float3 pos_i, float3 v_i, float4
     return rez;
 }
 
-__device__ float3 compute_wind( float3 normal, unsigned int num_neighbours, float mass )
+__device__ float3 compute_wind( float4 normal )
 {
-	float3 wind_dir = make_float3( 0.0f, 0.0f, -0.1f );
-	return mass * num_neighbours * normal * dot( normal, wind_dir );
+	float3 wind_dir = make_float3( 0.0f, 0.0f, -1.0f );
+	float3 N = make_float3( normal.x, normal.y, normal.z );
+	float surrounding_area = normal.w;
+	return 1.5f * surrounding_area * N * dot( N, wind_dir );
 }
 
-//euler temporar, doar cu gravitatie
-__global__ void euler_integration( float4 *positions, float4 *velocities, float4 *normals, uint2 *neighbours, NeighbourData *neighbourhood, uint2 num_particles, float dt, float damp, float mass )
+__global__ void euler_integration( float4 *positions, float4 *velocities, float4 *normals, uint2 *neighbours, NeighbourData *neighbourhood, uint2 num_particles, float dt, float damp, float mass, unsigned int wind )
 {
     uint2 absIndex;
     unsigned int absId;
@@ -228,10 +242,9 @@ __global__ void euler_integration( float4 *positions, float4 *velocities, float4
     float3 v1;
     float3 v2;
     float inv_mass;
-	float3 N;
+	float4 N;
 
-	temp = normals[absId];
-	N = make_float3( temp.x, temp.y, temp.z );
+	N = normals[absId];
     temp = positions[absId];
     p1 = make_float3( temp.x, temp.y, temp.z );
     inv_mass = temp.w;
@@ -243,7 +256,7 @@ __global__ void euler_integration( float4 *positions, float4 *velocities, float4
 
     uint2 neighbour_data_pointer = neighbours[absId];
 
-	a1 = a1 + v1 * damp + compute_spring_accelerations( p1, v1, positions, velocities, neighbourhood + neighbour_data_pointer.x, neighbour_data_pointer.y ) + compute_wind( N, neighbour_data_pointer.y, mass ); 
+	a1 = a1 + v1 * damp + compute_spring_accelerations( p1, v1, positions, velocities, neighbourhood + neighbour_data_pointer.x, neighbour_data_pointer.y ) + wind * compute_wind( N ); 
     p2 = p1 + dt * v1;
     v2 = v1 + dt * a1 * inv_mass;
 
@@ -254,7 +267,7 @@ __global__ void euler_integration( float4 *positions, float4 *velocities, float4
 
     __syncthreads();
 
-	a2 = a2 + v2 * damp + compute_spring_accelerations( p2, v2, positions, velocities, neighbourhood + neighbour_data_pointer.x, neighbour_data_pointer.y ) + compute_wind( N, neighbour_data_pointer.y, mass ); 
+	a2 = a2 + v2 * damp + compute_spring_accelerations( p2, v2, positions, velocities, neighbourhood + neighbour_data_pointer.x, neighbour_data_pointer.y ) + wind * compute_wind( N ); 
     rez = p1 + ( v1 + v2 ) * dt * 0.5f;
     positions[absId] = make_float4( rez.x, rez.y, rez.z, inv_mass );
     rez = v1 + ( a1 + a2 ) * dt * 0.5f * inv_mass;
@@ -263,7 +276,7 @@ __global__ void euler_integration( float4 *positions, float4 *velocities, float4
 
 //-----
 
-Cloth::Cloth( uint2 dim, uint2 num, float ks_in, float kd_in, float dt_in, float damp_in, float mass_in ) : dimensions( dim ), num_particles( num ), ks( ks_in ), kd( kd_in ), dt( dt_in ), damp( damp_in ), cloth_mass( mass_in ), start_pos( horizontal ), animate( false ), wireframe( true ), fixed_pos( upper_corners )
+Cloth::Cloth( uint2 dim, uint2 num, float ks_in, float kd_in, float dt_in, float damp_in, float mass_in ) : dimensions( dim ), num_particles( num ), ks( ks_in ), kd( kd_in ), dt( dt_in ), damp( damp_in ), cloth_mass( mass_in ), start_pos( horizontal ), animate( false ), wireframe( true ), fixed_pos( upper_corners ), wind( false )
 {
     init_cloth();
     createVBOs();
@@ -283,7 +296,7 @@ void Cloth::reset( bool change_pos )
     }
 	init_particles();
 	checkCudaErrors( cudaMemset( d_velocities, 0, sizeof( float4 ) * particle_count ) );
-	//shift_x( 1.10f );
+	//shift_x( 2.0f );
 }
 
 void Cloth::toggle_fixed_particles()
@@ -326,8 +339,8 @@ void Cloth::init_cloth()
 	{
 		for( unsigned int u = 0; u < num_particles.x; ++u )
 		{
-			uv.push_back( u * x_step * 2 );
-			uv.push_back( v * y_step * 2 );
+			uv.push_back( u * x_step * 4 );
+			uv.push_back( v * y_step * 4 );
 		}
 	}
 
@@ -336,8 +349,14 @@ void Cloth::init_cloth()
                  num_particles.y / block.y + ( num_particles.y % block.y > 0 ),
                  1 );
 
+	half_grid = dim3( ( num_particles.x + 1 ) / 2 / block.x + ( ( num_particles.x + 1 ) / 2 % block.x > 0 ),
+					( num_particles.y + 1 ) / 2 / block.y + ( ( num_particles.y + 1 ) / 2 % block.y > 0 ),
+					1 );
+
     checkCudaErrors( cudaMalloc( (void**)&d_velocities, sizeof( float4 ) * particle_count ) );
     checkCudaErrors( cudaMemset( d_velocities, 0, sizeof( float4 ) * particle_count ) );
+
+	checkCudaErrors( cudaMalloc( (void**)&d_triangle_normals, sizeof( TrianglePairData ) * ( num_particles.x - 1 ) * ( num_particles.y - 1 ) ) );
 }
 
 void Cloth::createVBOs()
@@ -422,14 +441,14 @@ void Cloth::draw()
 
 		glUniform1i( normal_sign_id, 1 );
 
-		color = glm::vec3( 0.8f, 0.0f, 0.0f );    
+		color = glm::vec3( 0.75f, 0.05f, 0.08f );    
 
 		glUniform3fv( colorID, 1, &color[0] );
 
 		glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color1 );
 		glDrawElements( GL_TRIANGLES, index_color1.size(), GL_UNSIGNED_SHORT, 0 );
     
-        color = glm::vec3( 0.0f, 0.0f, 0.8f );
+        color = glm::vec3( 0.09f, 0.15f, 0.42f );
 
 		glUniform3fv( colorID, 1, &color[0] );
 
@@ -440,14 +459,14 @@ void Cloth::draw()
 
 		glUniform1i( normal_sign_id, -1 );
 
-		color = glm::vec3( 0.8f, 0.0f, 0.0f );    
+		color = glm::vec3( 0.75f, 0.05f, 0.08f );    
 
 		glUniform3fv( colorID, 1, &color[0] );
 
 		glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, element_color1 );
 		glDrawElements( GL_TRIANGLES, index_color1.size(), GL_UNSIGNED_SHORT, 0 );
     
-        color = glm::vec3( 0.0f, 0.0f, 0.8f );
+        color = glm::vec3( 0.09f, 0.15f, 0.42f );
 
 		glUniform3fv( colorID, 1, &color[0] );
 
@@ -482,6 +501,7 @@ Cloth::~Cloth()
 	checkCudaErrors( cudaFree( d_neighbourhood ) );
 	checkCudaErrors( cudaFree( d_neighbours ) );
 	checkCudaErrors( cudaFree( d_velocities ) );
+	checkCudaErrors( cudaFree( d_triangle_normals ) );
     deleteVBOs();
 }
 
@@ -498,23 +518,34 @@ void Cloth::timestep()
     checkCudaErrors( cudaGraphicsMapResources( 1, &vbo_res_normals ) );
     checkCudaErrors( cudaGraphicsResourceGetMappedPointer( (void**) &d_normals, &num_bytes, vbo_res_normals ) );
 
+    k_compute_triangle_normals<<<grid,block>>>( d_positions, d_triangle_normals, num_particles );
+	checkCudaErrors( cudaMemset( d_normals, 0, num_bytes ) );
+	if( !wireframe || wind )
+	{
+		for( int tr = 0; tr < 2; tr++ )
+		{
+			for( int off = 0; off < 4; off++ )
+			{
+				k_compute_normals_no_overlap<<<half_grid, block>>>( d_triangle_normals, d_normals, num_particles, off, tr );
+			}
+		}
+		k_normalize_everything<<<grid,block>>>( d_normals, num_particles );
+	}
+    err = cudaGetLastError();
+    if( err )
+    {
+		std::cout<<"error at normals kernel: "<<cudaGetErrorString( err )<<std::endl;
+    }
+
     for( int i = 0; i < NUM_ITERS; ++i )
     {
-        euler_integration<<<grid,block>>>( d_positions, d_velocities, d_normals, d_neighbours, d_neighbourhood, num_particles, dt, damp, particle_mass );
+        euler_integration<<<grid,block>>>( d_positions, d_velocities, d_normals, d_neighbours, d_neighbourhood, num_particles, dt, damp, particle_mass, unsigned int( wind ) );
 
         err = cudaGetLastError();
         if( err )
         {
             std::cout<<"error at integration kernel: "<<cudaGetErrorString( err )<<std::endl;
         }
-    }
-
-    k_compute_normals<<<grid,block>>>( d_positions, d_normals, num_particles );
-	k_normalize_everything<<<grid,block>>>( d_normals, num_particles );
-    err = cudaGetLastError();
-    if( err )
-    {
-      std::cout<<"error at normals kernel: "<<cudaGetErrorString( err )<<std::endl;
     }
 
     checkCudaErrors( cudaGraphicsUnmapResources( 1, &vbo_res_positions ) );
@@ -526,6 +557,7 @@ void Cloth::init_particles()
     float2 spring_dim = make_float2( dimensions.x / (float) num_particles.x, dimensions.y / (float) num_particles.y );
     float4 *d_positions, *d_normals, *h_positions = NULL, *h_normals = NULL, *p;
     size_t num_bytes;
+	TrianglePairData *h_triangle_normals = NULL, *p2;
 
     checkCudaErrors( cudaGraphicsMapResources( 1, &vbo_res_positions ) );
     checkCudaErrors( cudaGraphicsResourceGetMappedPointer( (void**) &d_positions, &num_bytes, vbo_res_positions ) );
@@ -541,7 +573,15 @@ void Cloth::init_particles()
         std::cout<<"error at cloth init kernel: "<<cudaGetErrorString( err )<<std::endl;
     }
 
-    k_compute_normals<<<grid, block>>>(d_positions, d_normals, num_particles);
+    k_compute_triangle_normals<<<grid, block>>>(d_positions, d_triangle_normals, num_particles);
+	checkCudaErrors( cudaMemset( d_normals, 0, num_bytes ) );
+	for( int tr = 0; tr < 2; tr++ )
+	{
+		for( int off = 0; off < 4; off++ )
+		{
+			k_compute_normals_no_overlap<<<half_grid, block>>>( d_triangle_normals, d_normals, num_particles, off, tr );
+		}
+	}
 	k_normalize_everything<<<grid,block>>>( d_normals, num_particles );
     err = cudaGetLastError();
     if( err )
@@ -558,7 +598,7 @@ void Cloth::init_particles()
         {
             for( int j = 0; j < num_particles.x; ++j )
             {
-                std::cout<<"("<<p->x<<","<<p->y<<","<<p->z<<") ";
+                std::cout<<"("<<p->x<<","<<p->y<<","<<p->z<<","<<p->w<<") ";
                 p++;
             }
             std::cout<<std::endl;
@@ -584,6 +624,21 @@ void Cloth::init_particles()
 
         free( h_positions );
     }
+
+	//h_triangle_normals = (TrianglePairData*)malloc( sizeof( h_triangle_normals ) * (num_particles.x - 1) * (num_particles.y - 1) );
+	if( h_triangle_normals )
+	{
+		p2 = h_triangle_normals;
+		checkCudaErrors( cudaMemcpy( h_triangle_normals, d_triangle_normals, sizeof( h_triangle_normals ) * (num_particles.x - 1) * (num_particles.y - 1), cudaMemcpyDeviceToHost ) );
+		for( int i = 0; i < (num_particles.y - 1); ++i )
+        {
+            for( int j = 0; j < (num_particles.x-1); ++j )
+            {
+				std::cout<<"["<<p2->N[0].x<<","<<p2->N[0].y<<","<<p2->N[0].z<<","<<p2->N[0].w<<"]["<<p2->N[1].x<<","<<p2->N[1].y<<","<<p2->N[1].z<<","<<p2->N[1].w<<"] ";
+            }
+            std::cout<<std::endl;
+        }
+	}
 
     checkCudaErrors( cudaGraphicsUnmapResources( 1, &vbo_res_positions ) );
     checkCudaErrors( cudaGraphicsUnmapResources( 1, &vbo_res_normals ) );

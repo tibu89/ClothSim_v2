@@ -37,8 +37,8 @@ double last_time = 0.0f, current_time;
 int num_frames = 0;
 
 //misc
-unsigned int w_width = 512;
-unsigned int w_height = 512;
+unsigned int w_width = 512 + 512/2;
+unsigned int w_height = 512 + 512/2;
 
 // mouse
 int mouse_old_x, mouse_old_y;
@@ -184,7 +184,7 @@ bool initGL(int *argc, char **argv)
 	update_camera_position();
 
 	tex_normal_map = SOIL_load_OGL_texture(
-		"..\\common\\data\\cloth_normal_map3.jpg",
+		"..\\common\\data\\cloth_normal_map2.jpg",
 		SOIL_LOAD_AUTO,
 		SOIL_CREATE_NEW_ID,
 		SOIL_FLAG_TEXTURE_REPEATS | SOIL_FLAG_MIPMAPS | SOIL_FLAG_NTSC_SAFE_RGB | SOIL_FLAG_COMPRESS_TO_DXT | SOIL_FLAG_INVERT_Y
@@ -309,10 +309,11 @@ int main( int argc, char **argv )
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 16, 16 ), 250.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 32, 32 ), 250.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
 	cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 250.25f, 0.25f, 0.008f, -0.0125f, 1024.0f );
-	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 250.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
+	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 50.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 128, 128 ), 200.25f, 0.25f, 0.008f, -0.0125f, 1024.0f * 3 );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 128, 128 ), 200.25f, 0.40f, 0.008f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 256, 256 ), 150.25f, 0.50f, 0.005f, -0.0125f, 1024.0f * 4 );
+	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 256, 256 ), 50.25f, 0.50f, 0.005f, -0.0125f, 1024.0f * 4 );
 	show_vram_usage();
 	
 	last_time = (double)glutGet( GLUT_ELAPSED_TIME );
@@ -374,6 +375,10 @@ void keyboard(unsigned char key, int x, int y)
 	case 'F':
 		cloth->toggle_fixed_particles();
 		cloth->reset( false );
+		break;
+	case 'd':
+	case 'D':
+		cloth->toggle_wind();
 		break;
     }
 }
@@ -461,8 +466,8 @@ void display()
 	glUniform4fv( light_posID, 1, &light_pos[0] ); 
 
     cloth->draw(); 
-	current_time = glutGet( GLUT_ELAPSED_TIME );
-	light_pos[0] = 20.0f * sin( current_time / 350 );
+	//current_time = glutGet( GLUT_ELAPSED_TIME );
+	//light_pos[0] = 20.0f * sin( current_time / 350 );
 
 	num_frames++;
 	if( current_time - last_time > 1000.0f )

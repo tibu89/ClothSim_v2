@@ -38,6 +38,7 @@ vec3 perturb_normal( vec3 N, vec3 V, vec2 tex )
 {
 	vec3 normal_map = texture2D( normal_map_sampler, tex ).xyz;
 	normal_map = normal_map * 2.0f - 1.0f;
+	normal_map.y = -normal_map.y;
 	
 	mat3 TBN = get_cotangent_frame( N, -V, tex );
 	return normalize( TBN * normal_map );
