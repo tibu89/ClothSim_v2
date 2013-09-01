@@ -10,6 +10,7 @@
 #include <glm\glm.hpp>
 
 #define NUM_ITERS 8
+#define MAX_DEFORMATION 0.25f
 
 //kernels
 
@@ -17,8 +18,49 @@
 extern GLuint programID, colorID, tex_normal_map, tex_normal_map_id, normal_sign_id;
 
 __device__ bool provot_modif;
-__device__ __constant__ bool neigh_off_x[] = { -1, 0, 1, -1, 0, -1, 1, 0, 1 };
-__device__ __constant__ bool neigh_off_y[] = { -1, -1, -1, 0, 0, 0, 1, 1, 1 };
+
+__device__ void apply_provot_dynamic_inverse( unsigned int absId, float3 pos, float inv_mass, uint2 num_particles, float4 *positions, NeighbourData *neighbour_data, unsigned int num_neighbours )
+{
+	if( inv_mass == 0.0f )
+		return;
+
+	int2 neigh_index;
+	unsigned int neigh_absId;
+	float move_ratio;
+	float4 temp;
+	float3 pos_neigh;
+	float neigh_inv_mass;
+	float diff;
+	float3 p1p2;
+	NeighbourData neigh_data;
+	float max_def = 1 + MAX_DEFORMATION, min_def = 1 - MAX_DEFORMATION;
+
+	for( int i = 0; i < num_neighbours; i++ )
+	{
+		neigh_data = neighbour_data[i];
+		temp = positions[ neigh_data.index ];
+		pos_neigh = make_float3( temp.x, temp.y, temp.z );
+		neigh_inv_mass = temp.w;
+		move_ratio = inv_mass / ( inv_mass + neigh_inv_mass );
+		
+		p1p2 = pos_neigh - pos;
+		diff = p1p2.x * p1p2.x + p1p2.y * p1p2.y + p1p2.z * p1p2.z;
+
+		if( diff <= ( neigh_data.rest_length * neigh_data.rest_length * max_def * max_def ) &&
+			diff >= ( neigh_data.rest_length * neigh_data.rest_length * min_def * min_def ) )
+		{
+			continue;
+		}
+
+		diff = sqrt( diff );
+		diff -= neigh_data.rest_length;
+		diff *= move_ratio;
+
+		pos += diff * normalize( p1p2 );
+		positions[absId] = make_float4( pos, inv_mass );
+	}
+	
+}
 
 __global__ void k_cloth_init( float4 *positions, float2 spring_dim, uint2 num_particles, Cloth::starting_position start_pos, float mass, Cloth::fixed_particles fixed)
 {
@@ -224,7 +266,7 @@ __device__ float3 compute_wind( float4 normal )
 	return 1.5f * surrounding_area * N * dot( N, wind_dir );
 }
 
-__global__ void k_verlet_integration( float4 *positions_out, float4 *positions_current, float4 *positions_old, float4 *normals, uint2 *neighbours, NeighbourData *neighbourhood, uint2 num_particles, float dt, float damp, float mass, unsigned int wind )
+__global__ void k_verlet_integration( float4 *positions_out, float4 *positions_current, float4 *positions_old, float4 *normals, NeighbourDataPointer *neighbours, NeighbourData *neighbourhood, uint2 num_particles, float dt, float damp, float mass, unsigned int wind )
 {
     uint2 absIndex;
     unsigned int absId;
@@ -255,15 +297,19 @@ __global__ void k_verlet_integration( float4 *positions_out, float4 *positions_c
 
 	v = ( pos - pos_old ) / dt;
 
-    uint2 neighbour_data_pointer = neighbours[absId];
+	NeighbourDataPointer neighbour_data_pointer = neighbours[absId];
 
-	f = f + v * damp + compute_spring_accelerations( pos, pos_old, positions_current, positions_old, neighbourhood + neighbour_data_pointer.x, neighbour_data_pointer.y, dt ) + wind * compute_wind( N ); 
+	f = f + v * damp + compute_spring_accelerations( pos, pos_old, positions_current, positions_old, neighbourhood + neighbour_data_pointer.index, neighbour_data_pointer.neighbour_count, dt ) + wind * compute_wind( N ); 
     pos = pos + ( pos - pos_old ) + f * inv_mass * dt * dt;
 
+	positions_out[absId] = make_float4( pos.x, pos.y, pos.z, inv_mass );
+	for( int i = 0; i < 8; ++i )
+	{
+		//apply_provot_dynamic_inverse( absId, inv_mass, num_particles, positions_out, neighbourhood + neighbour_data_pointer.index, neighbour_data_pointer.near_neighbour_count );
+	}
+/*
 	float3 center = make_float3(0.0, -7.0, 2.0);
 	float radius = 5;
-
-
 
 	if (length(pos - center) < radius)
 	{
@@ -272,7 +318,7 @@ __global__ void k_verlet_integration( float4 *positions_out, float4 *positions_c
 		pos = center + coll_dir * radius;
 	}
 
-	positions_out[absId] = make_float4( pos.x, pos.y, pos.z, inv_mass );
+	positions_out[absId] = make_float4( pos.x, pos.y, pos.z, inv_mass );*/
 }
 
 //-----
@@ -658,7 +704,6 @@ void Cloth::set_neighbours()
     checkCudaErrors( cudaGraphicsMapResources( 1, &vbo_res_positions ) );
     checkCudaErrors( cudaGraphicsResourceGetMappedPointer( (void**) &d_positions, &num_bytes, vbo_res_positions ) );
 
-    h_neighbours = (uint2*)malloc( particle_count * sizeof( uint2 ) );
     h_positions = (float4*)malloc( num_bytes );
     std::cout<<"num bytes: "<<num_bytes<<std::endl;
     checkCudaErrors( cudaMemcpy( h_positions, d_positions, num_bytes, cudaMemcpyDeviceToHost ) );
@@ -669,9 +714,10 @@ void Cloth::set_neighbours()
         for( int x = 0; x < num_particles.x; ++x, ++count )
         {
             unsigned int index = x + y * num_particles.x;
+			NeighbourDataPointer new_ndp;
 
-            h_neighbours[count].x = h_neighbourhood.size();
-            h_neighbours[count].y = 0;
+			new_ndp.index = h_neighbourhood.size();
+			new_ndp.neighbour_count = 0;
             temp_f4 = h_positions[ index ];
             temp1_f3 = make_float3( temp_f4.x, temp_f4.y, temp_f4.z );
             for( int i = max( x - 1, 0 ); i <= min( x + 1, num_particles.x - 1 ); ++i )
@@ -688,9 +734,10 @@ void Cloth::set_neighbours()
 					neighbour_data.kd = kd;
                     h_neighbourhood.push_back( neighbour_data );
                     //std::cout<<"["<<neighbour_data.index<<","<<neighbour_data.rest_length<<"] ";
-                    h_neighbours[count].y++;
+                    new_ndp.neighbour_count++;
                 }
             }
+			new_ndp.near_neighbour_count = new_ndp.neighbour_count;
             NeighbourData neighbour_data;
 			neighbour_data.ks = ks;
 			neighbour_data.kd = kd;
@@ -701,7 +748,7 @@ void Cloth::set_neighbours()
                 temp2_f3 = make_float3( temp_f4.x, temp_f4.y, temp_f4.z );
                 neighbour_data.rest_length = length( temp1_f3 - temp2_f3 );
                 h_neighbourhood.push_back( neighbour_data );
-                h_neighbours[count].y++;
+                new_ndp.neighbour_count++;
             }
             if( x < num_particles.x - 2 )
             {
@@ -710,7 +757,7 @@ void Cloth::set_neighbours()
                 temp2_f3 = make_float3( temp_f4.x, temp_f4.y, temp_f4.z );
                 neighbour_data.rest_length = length( temp1_f3 - temp2_f3 );
                 h_neighbourhood.push_back( neighbour_data );
-                h_neighbours[count].y++;
+                new_ndp.neighbour_count++;
             }
             if( y >= 2)
             {
@@ -719,7 +766,7 @@ void Cloth::set_neighbours()
                 temp2_f3 = make_float3( temp_f4.x, temp_f4.y, temp_f4.z );
                 neighbour_data.rest_length = length( temp1_f3 - temp2_f3 );
                 h_neighbourhood.push_back( neighbour_data );
-                h_neighbours[count].y++;
+                new_ndp.neighbour_count++;
             }
             if( y < num_particles.y - 2)
             {
@@ -728,8 +775,9 @@ void Cloth::set_neighbours()
                 temp2_f3 = make_float3( temp_f4.x, temp_f4.y, temp_f4.z );
                 neighbour_data.rest_length = length( temp1_f3 - temp2_f3 );
                 h_neighbourhood.push_back( neighbour_data );
-                h_neighbours[count].y++;
+                new_ndp.neighbour_count++;
             }
+			h_neighbours.push_back( new_ndp );
             //std::cout<<std::endl;			
         }		
     }
@@ -741,7 +789,7 @@ void Cloth::set_neighbours()
     {
         for( int x = 0; x < num_particles.x; ++x )
         {
-            std::cout<<"["<<h_neighbours[count].x<<","<<h_neighbours[count].y<<"] ";
+			std::cout<<"["<<h_neighbours[count].index<<","<<h_neighbours[count].neighbour_count<<","<<h_neighbours[count].near_neighbour_count<<"] ";
             count++;
         }
         std::cout<<std::endl;
@@ -751,13 +799,13 @@ void Cloth::set_neighbours()
 
     checkCudaErrors( cudaGraphicsUnmapResources( 1, &vbo_res_positions ) );
 
-    checkCudaErrors( cudaMalloc( (void**)&d_neighbours, sizeof( uint2 ) * particle_count ) );
-    checkCudaErrors( cudaMemcpy( d_neighbours, h_neighbours, sizeof( uint2 ) * particle_count, cudaMemcpyHostToDevice ) );
+	checkCudaErrors( cudaMalloc( (void**)&d_neighbours, sizeof( NeighbourDataPointer ) * particle_count ) );
+    checkCudaErrors( cudaMemcpy( d_neighbours, &h_neighbours[0], sizeof( NeighbourDataPointer ) * particle_count, cudaMemcpyHostToDevice ) );
 
     checkCudaErrors( cudaMalloc( (void**)&d_neighbourhood, sizeof( NeighbourData ) * h_neighbourhood.size() ) );
     checkCudaErrors( cudaMemcpy( d_neighbourhood, &h_neighbourhood[0], sizeof( NeighbourData ) * h_neighbourhood.size(), cudaMemcpyHostToDevice ) );
 
-    free( h_neighbours );
+	h_neighbours.clear();
     h_neighbourhood.clear();
 }
 

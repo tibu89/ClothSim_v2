@@ -11,6 +11,11 @@
 #include <cuda_gl_interop.h>
 #include <vector>
 
+struct NeighbourDataPointer
+{
+	unsigned int index, neighbour_count, near_neighbour_count;
+};
+
 struct NeighbourData
 {
     unsigned int index;
@@ -59,7 +64,8 @@ private:
     float ks, kd, dt, damp;
 	float cloth_mass, particle_mass;
 
-    uint2 *h_neighbours, *d_neighbours;
+	std::vector<NeighbourDataPointer> h_neighbours;
+    NeighbourDataPointer *d_neighbours;
     std::vector<NeighbourData> h_neighbourhood;
     NeighbourData *d_neighbourhood;
 	TrianglePairData *d_triangle_normals;

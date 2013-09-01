@@ -327,7 +327,7 @@ int main( int argc, char **argv )
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 8, 8 ), 250.25f, 0.25f, 0.02f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 16, 16 ), 250.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 32, 32 ), 250.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
-	cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 250.25f, 0.125f, 0.015f, -0.0f, 1024.0f );
+	cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 1050.25f, 0.125f, 0.015f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 50.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 128, 128 ), 200.25f, 0.25f, 0.008f, -0.0125f, 1024.0f * 3 );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 128, 128 ), 200.25f, 0.40f, 0.008f, -0.0125f, 1024.0f );
