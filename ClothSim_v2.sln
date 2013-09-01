@@ -3,6 +3,8 @@ Microsoft Visual Studio Solution File, Format Version 10.00
 # Visual C++ Express 2008
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ClothSimExplicitEuler", "ClothSimExplicitEuler\ClothSimExplicitEuler.vcproj", "{4373AEF7-92B2-438C-93C9-68CBF3D54BD1}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ClothSimVerlet", "ClothSimVerlet\ClothSimVerlet.vcproj", "{0A62B8BA-9976-4C26-8E0B-B69AB7C01472}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -13,6 +15,10 @@ Global
 		{4373AEF7-92B2-438C-93C9-68CBF3D54BD1}.Debug|Win32.Build.0 = Debug|Win32
 		{4373AEF7-92B2-438C-93C9-68CBF3D54BD1}.Release|Win32.ActiveCfg = Release|Win32
 		{4373AEF7-92B2-438C-93C9-68CBF3D54BD1}.Release|Win32.Build.0 = Release|Win32
+		{0A62B8BA-9976-4C26-8E0B-B69AB7C01472}.Debug|Win32.ActiveCfg = Debug|Win32
+		{0A62B8BA-9976-4C26-8E0B-B69AB7C01472}.Debug|Win32.Build.0 = Debug|Win32
+		{0A62B8BA-9976-4C26-8E0B-B69AB7C01472}.Release|Win32.ActiveCfg = Release|Win32
+		{0A62B8BA-9976-4C26-8E0B-B69AB7C01472}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

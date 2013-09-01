@@ -39,6 +39,8 @@ int num_frames = 0;
 unsigned int w_width = 512 + 512/2;
 unsigned int w_height = 512 + 512/2;
 
+float fov = 60.0f, near_plane = 0.1f, far_plane = 100.0f, ratio;
+
 // mouse
 int mouse_old_x, mouse_old_y;
 int mouse_buttons = 0;
@@ -55,7 +57,7 @@ void reshape( int w, int h );
 
 void update_camera_position();
 
-glm::mat4 P;
+glm::mat4 P, V, M;
 glm::vec3 camera_pos;
 glm::vec3 focus_pos;
 glm::vec3 up;
@@ -74,6 +76,21 @@ GLuint light_posID;
 GLuint normal_sign_id;
 
 GLuint tex_normal_map, tex_normal_map_id;
+
+float3 ray;
+
+enum Mouse_mode
+{
+	camera_mode,
+	select_mode
+};
+
+Mouse_mode mouse_mode = Mouse_mode::camera_mode;
+
+void update_ray_picker(int x, int y)
+{
+	//glm::unProject( 
+}
 
 bool checkHW(char *name, const char *gpuType, int dev)
 {
@@ -151,7 +168,7 @@ bool initGL(int *argc, char **argv)
     glutInit( argc, argv );
     glutInitDisplayMode( GLUT_RGBA | GLUT_DOUBLE );
     glutInitWindowSize( w_width, w_height );
-    glutCreateWindow( "ClothSimExplicitEuler" );
+    glutCreateWindow( "ClothSimVerlet" );
     glutDisplayFunc( display );
     glutKeyboardFunc( keyboard );
     glutMotionFunc( motion );
@@ -179,8 +196,11 @@ bool initGL(int *argc, char **argv)
     glViewport(0, 0, w_width, w_height);
 
     // projection
-	P = glm::perspective( 60.0f, (float) w_width / (float) w_height, 0.1f, 1000.0f );
+	ratio = (float) w_width / (float) w_height;
+	P = glm::perspective( fov, ratio, near_plane, far_plane );
 	update_camera_position();
+
+	M = glm::mat4x4( 1.0 );
 
 	tex_normal_map = SOIL_load_OGL_texture(
 		"..\\common\\data\\cloth_normal_map2.jpg",
@@ -304,11 +324,11 @@ int main( int argc, char **argv )
 
 	cudaGLSetGLDevice( gpuGetMaxGflopsDeviceId() );
 
-	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 8, 8 ), 250.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
+	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 8, 8 ), 250.25f, 0.25f, 0.02f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 16, 16 ), 250.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 32, 32 ), 250.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
-	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 250.25f, 0.25f, 0.008f, -0.0125f, 1024.0f );
-	cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 50.25f, 0.25f, 0.008f, -0.0125f, 1024.0f );
+	cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 250.25f, 0.125f, 0.015f, -0.0f, 1024.0f );
+	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 50.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 128, 128 ), 200.25f, 0.25f, 0.008f, -0.0125f, 1024.0f * 3 );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 128, 128 ), 200.25f, 0.40f, 0.008f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 256, 256 ), 150.25f, 0.50f, 0.005f, -0.0125f, 1024.0f * 4 );
@@ -357,17 +377,17 @@ void keyboard(unsigned char key, int x, int y)
 		break;
 	case '3':
 		delete cloth;
-		cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 250.25f, 0.25f, 0.008f, -0.0125f, 1024.0f );
+		cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 250.25f, 0.25f, 0.015f, -0.0125f, 1024.0f );
 		show_vram_usage();
 		break;
 	case '4':
 		delete cloth;
-		cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 128, 128 ), 200.25f, 0.40f, 0.008f, -0.0125f, 1024.0f );
+		cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 128, 128 ), 200.25f, 0.40f, 0.008f, -0.0f, 1024.0f );
 		show_vram_usage();
 		break;
 	case '5':
 		delete cloth;
-		cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 256, 256 ), 150.25f, 0.50f, 0.005f, -0.0125f, 1024.0f * 4 );
+		cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 256, 256 ), 150.25f, 0.50f, 0.008f, -0.0125f, 1024.0f * 4 );
 		show_vram_usage();
 		break;
 	case 'f':
@@ -384,6 +404,7 @@ void keyboard(unsigned char key, int x, int y)
 
 void mouse(int button, int state, int x, int y)
 {
+	std::cout<<x<<" "<<y<<std::endl;
     if (state == GLUT_DOWN)
     {
         if( button == 3 )
@@ -422,27 +443,34 @@ void motion(int x, int y)
     dx = (float)(x - mouse_old_x);
     dy = (float)(y - mouse_old_y);
 
-    if (mouse_buttons & 1)
-    {
-        rotate_x -= dy * 0.01f;
-        rotate_y -= dx * 0.01f;
+	switch( mouse_mode )
+	{
+	case Mouse_mode::camera_mode:
+		if (mouse_buttons & 1)
+		{
+			rotate_x -= dy * 0.01f;
+			rotate_y -= dx * 0.01f;
 
-		update_camera_position();
-    }
-    else if (mouse_buttons & 4)
-    {
-        focus_pos.y += dy * 0.05f;
+			update_camera_position();
+		}
+		else if (mouse_buttons & 4)
+		{
+			focus_pos.y += dy * 0.05f;
 
-		update_camera_position();
-    }
-    else if (mouse_buttons & 2)
-    {
-        radius += dy * 0.05f;
+			update_camera_position();
+		}
+		else if (mouse_buttons & 2)
+		{
+			radius += dy * 0.05f;
 
-		if( radius < 1 ) radius = 1.0f;
+			if( radius < 1 ) radius = 1.0f;
 
-		update_camera_position();
-    }
+			update_camera_position();
+		}
+		break;
+	case Mouse_mode::select_mode:
+		break;
+	}
 
     mouse_old_x = x;
     mouse_old_y = y;
@@ -455,9 +483,8 @@ void display()
 	glUseProgram( programID );
 
     // set view matrix
-    glm::mat4 V = glm::lookAt( camera_pos, focus_pos, up );
+    V = glm::lookAt( camera_pos, focus_pos, up );
 
-	glm::mat4 M( 1.0f );
 	glm::mat4 MVP = P * V * M;
 	glUniformMatrix4fv( MVPmatrixID, 1, GL_FALSE, &MVP[0][0] );
 	glUniformMatrix4fv( model_matrixID, 1, GL_FALSE, &M[0][0] );
@@ -467,6 +494,7 @@ void display()
     cloth->draw(); 
 	//current_time = glutGet( GLUT_ELAPSED_TIME );
 	//light_pos[0] = 20.0f * sin( current_time / 350 );
+	glUseProgram( 0 );
 
 	num_frames++;
 	if( current_time - last_time > 1000.0f )
@@ -484,8 +512,9 @@ void reshape(int width, int height)
 {
 	w_width = width;
 	w_height = height;
+	ratio = (float) w_width / (float) w_height;
 	glViewport( 0, 0, (GLsizei)w_width, (GLsizei)w_height );
-	P = glm::perspective( 60.0f, (float) w_width / (float) w_height, 0.1f, 1000.0f );
+	P = glm::perspective( fov, ratio, near_plane, far_plane );
 }
 
 void update_camera_position()
