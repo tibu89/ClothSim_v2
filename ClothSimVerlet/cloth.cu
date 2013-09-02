@@ -10,7 +10,7 @@
 #include <glm\glm.hpp>
 
 #define NUM_ITERS 8
-#define MAX_DEFORMATION 0.25f
+#define MAX_DEFORMATION 0.1f
 
 //kernels
 
@@ -19,13 +19,11 @@ extern GLuint programID, colorID, tex_normal_map, tex_normal_map_id, normal_sign
 
 __device__ bool provot_modif;
 
-__device__ void apply_provot_dynamic_inverse( unsigned int absId, float3 pos, float inv_mass, uint2 num_particles, float4 *positions, NeighbourData *neighbour_data, unsigned int num_neighbours )
+__device__ void apply_provot_dynamic_inverse( unsigned int absId, float inv_mass, uint2 num_particles, float4 *positions, NeighbourData *neighbour_data, unsigned int num_neighbours )
 {
 	if( inv_mass == 0.0f )
 		return;
 
-	int2 neigh_index;
-	unsigned int neigh_absId;
 	float move_ratio;
 	float4 temp;
 	float3 pos_neigh;
@@ -34,9 +32,13 @@ __device__ void apply_provot_dynamic_inverse( unsigned int absId, float3 pos, fl
 	float3 p1p2;
 	NeighbourData neigh_data;
 	float max_def = 1 + MAX_DEFORMATION, min_def = 1 - MAX_DEFORMATION;
+	float3 pos;
 
 	for( int i = 0; i < num_neighbours; i++ )
 	{
+		__syncthreads();
+		temp = positions[absId];
+		pos = make_float3( temp.x, temp.y, temp.z );
 		neigh_data = neighbour_data[i];
 		temp = positions[ neigh_data.index ];
 		pos_neigh = make_float3( temp.x, temp.y, temp.z );
@@ -54,7 +56,7 @@ __device__ void apply_provot_dynamic_inverse( unsigned int absId, float3 pos, fl
 
 		diff = sqrt( diff );
 		diff -= neigh_data.rest_length;
-		diff *= move_ratio;
+		diff *= move_ratio / NUM_ITERS;
 
 		pos += diff * normalize( p1p2 );
 		positions[absId] = make_float4( pos, inv_mass );
@@ -303,10 +305,10 @@ __global__ void k_verlet_integration( float4 *positions_out, float4 *positions_c
     pos = pos + ( pos - pos_old ) + f * inv_mass * dt * dt;
 
 	positions_out[absId] = make_float4( pos.x, pos.y, pos.z, inv_mass );
-	for( int i = 0; i < 8; ++i )
+	/*for( int i = 0; i < 8; ++i )
 	{
-		//apply_provot_dynamic_inverse( absId, inv_mass, num_particles, positions_out, neighbourhood + neighbour_data_pointer.index, neighbour_data_pointer.near_neighbour_count );
-	}
+		apply_provot_dynamic_inverse( absId, inv_mass, num_particles, positions_out, neighbourhood + neighbour_data_pointer.index, neighbour_data_pointer.near_neighbour_count );
+	}*/
 /*
 	float3 center = make_float3(0.0, -7.0, 2.0);
 	float radius = 5;
