@@ -17,8 +17,6 @@
 //shader ids
 extern GLuint programID, colorID, tex_normal_map, tex_normal_map_id, normal_sign_id;
 
-__device__ bool provot_modif;
-
 __device__ void apply_provot_dynamic_inverse( unsigned int absId, float inv_mass, uint2 num_particles, float4 *positions, NeighbourData *neighbour_data, unsigned int num_neighbours )
 {
 	if( inv_mass == 0.0f )
@@ -64,7 +62,7 @@ __device__ void apply_provot_dynamic_inverse( unsigned int absId, float inv_mass
 	
 }
 
-__global__ void k_cloth_init( float4 *positions, float2 spring_dim, uint2 num_particles, Cloth::starting_position start_pos, float mass, Cloth::fixed_particles fixed)
+__global__ void k_cloth_init( float4 *positions, float2 spring_dim, uint2 num_particles, Cloth::starting_position start_pos, float mass, Cloth::fixed_particles fixed )
 {
     int2 absIndex;
     absIndex.x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -89,6 +87,12 @@ __global__ void k_cloth_init( float4 *positions, float2 spring_dim, uint2 num_pa
 			is_fixed = true;
 		}
 		break;
+	case Cloth::corners:
+		if( ( ( absIndex.y == 0 ) && ( absIndex.x == 0 || absIndex.x == ( num_particles.x - 1 ) ) ) ||
+			( ( absIndex.y == ( num_particles.y - 1 ) ) && ( absIndex.x == 0 || absIndex.x == ( num_particles.x - 1 ) ) ) )
+		{
+			is_fixed = true;
+		}
 	}
 
     if( is_fixed )
@@ -118,7 +122,7 @@ __global__ void k_cloth_init( float4 *positions, float2 spring_dim, uint2 num_pa
     positions[absIndex.x + absIndex.y * num_particles.x] = pos;
 }
 
-__global__ void k_compute_triangle_normals(float4 *positions, TrianglePairData *triangle_normals, uint2 num_particles)
+__global__ void k_compute_triangle_normals( float4 *positions, TrianglePairData *triangle_normals, uint2 num_particles )
 {
     int2 absIndex;
     absIndex.x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -168,6 +172,82 @@ __global__ void k_compute_triangle_normals(float4 *positions, TrianglePairData *
 		temp.x = norm.x; temp.y = norm.y; temp.z = norm.z;
 		triangle_normals[pos].N[1] = temp;
     }
+}
+
+__device__ int picked_index;
+__device__ float min_t;
+
+__global__ void k_check_ray_intersection( float4 *positions, float4 *positions_old, TrianglePairData *triangle_normals, float3 P, float3 D, uint2 num_particles )
+{
+	int2 absIndex;
+    absIndex.x = blockIdx.x * blockDim.x + threadIdx.x;
+    absIndex.y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    unsigned int absPos;
+    absPos = absIndex.x + absIndex.y * num_particles.x;
+
+    float4 temp;
+    if( absIndex.x >= ( num_particles.x - 1 ) || absIndex.y >= ( num_particles.y - 1 ) )
+		return;
+
+	TrianglePairData quad = triangle_normals[absPos];
+	
+	float3 A, B, C;
+	float3 PA, PB, PC;
+	float3 N;
+	float t;
+
+	temp = positions[absPos];
+	A = make_float3( temp.x, temp.y, temp.z );
+	temp = positions[absPos + 1];
+	B = make_float3( temp.x, temp.y, temp.z );
+	temp = positions[absPos + num_particles.x];
+	C = make_float3( temp.x, temp.y, temp.z );
+
+	PA = A - P;
+	PB = B - P;
+	PC = C - P;
+
+	float sAB = dot( cross( PA, PB ), D );
+	float sBC = dot( cross( PB, PC ), D );
+	float sCA = dot( cross( PC, PA ), D );
+
+	N = make_float3( quad.N[0].x, quad.N[0].y, quad.N[0].z );
+//positions[absPos] = make_float4( A, 0.0f );
+	// au acelasi semn, linia intersecteaza triunghiul
+	if( ( sAB >= 0 && sBC >= 0 && sCA >= 0 ) ||
+		( sAB <= 0 && sBC <= 0 && sCA <= 0 ) )
+	{
+		positions[absPos] = make_float4( A, 0.0f );
+		positions_old[absPos] = make_float4( A, 0.0f );
+		t = dot( ( P - A ), N ) / dot( D, N );
+	}
+
+	temp = positions[absPos + 1];
+	A = make_float3( temp.x, temp.y, temp.z );
+	temp = positions[absPos + num_particles.x + 1];
+	B = make_float3( temp.x, temp.y, temp.z );
+	temp = positions[absPos + num_particles.x];
+	C = make_float3( temp.x, temp.y, temp.z );
+
+	PA = A - P;
+	PB = B - P;
+	PC = C - P;
+
+	sAB = dot( cross( PA, PB ), D );
+	sBC = dot( cross( PB, PC ), D );
+	sCA = dot( cross( PC, PA ), D );
+
+	N = make_float3( quad.N[1].x, quad.N[1].y, quad.N[1].z );
+
+	// au acelasi semn, linia intersecteaza triunghiul
+	if( ( sAB >= 0 && sBC >= 0 && sCA >= 0 ) ||
+		( sAB <= 0 && sBC <= 0 && sCA <= 0 ) )
+	{
+		positions[absPos + 1] = make_float4( A, 0.0f );
+		positions_old[absPos + 1] = make_float4( A, 0.0f );
+		t = dot( ( P - A ), N ) / dot( D, N );
+	}
 }
 
 __device__ unsigned int offset_x[] = { 0, 1, 0, 1 };
@@ -262,7 +342,7 @@ __device__ float3 compute_spring_accelerations( float3 pos_i, float3 pos_old_i, 
 
 __device__ float3 compute_wind( float4 normal )
 {
-	float3 wind_dir = make_float3( 0.0f, 0.0f, -1.0f );
+	float3 wind_dir = make_float3( 0.0f, 0.0f, 1.0f );
 	float3 N = make_float3( normal.x, normal.y, normal.z );
 	float surrounding_area = normal.w;
 	return 1.5f * surrounding_area * N * dot( N, wind_dir );
@@ -295,7 +375,7 @@ __global__ void k_verlet_integration( float4 *positions_out, float4 *positions_c
     pos = make_float3( temp.x, temp.y, temp.z );
     inv_mass = temp.w;
     temp = positions_old[absId];
-    pos_old = make_float3( temp.x, temp.y, temp.z );
+	pos_old = make_float3( temp.x, temp.y, temp.z );
 
 	v = ( pos - pos_old ) / dt;
 
@@ -309,8 +389,8 @@ __global__ void k_verlet_integration( float4 *positions_out, float4 *positions_c
 	{
 		apply_provot_dynamic_inverse( absId, inv_mass, num_particles, positions_out, neighbourhood + neighbour_data_pointer.index, neighbour_data_pointer.near_neighbour_count );
 	}*/
-/*
-	float3 center = make_float3(0.0, -7.0, 2.0);
+
+	/*float3 center = make_float3(0.0, -7.0, 2.0);
 	float radius = 5;
 
 	if (length(pos - center) < radius)
@@ -318,9 +398,9 @@ __global__ void k_verlet_integration( float4 *positions_out, float4 *positions_c
 		// collision
 		float3 coll_dir = normalize(pos - center);
 		pos = center + coll_dir * radius;
-	}
+	}*/
 
-	positions_out[absId] = make_float4( pos.x, pos.y, pos.z, inv_mass );*/
+	positions_out[absId] = make_float4( pos.x, pos.y, pos.z, inv_mass );
 }
 
 //-----
@@ -835,4 +915,16 @@ void Cloth::shift_x( float scale )
 	checkCudaErrors( cudaMemcpy( d_positions, h_positions, num_bytes, cudaMemcpyHostToDevice ) );
 	free( h_positions );
     checkCudaErrors( cudaGraphicsUnmapResources( 1, &vbo_res_positions ) );
+}
+
+void Cloth::pick( float3 camera_pos, float3 ray )
+{
+	k_check_ray_intersection<<<grid, block>>>( d_positions_current, d_positions_old, d_triangle_normals, camera_pos, ray, num_particles );
+
+	cudaError_t err = cudaGetLastError();
+    if( err )
+    {
+        std::cout<<"error at cloth init kernel: "<<cudaGetErrorString( err )<<std::endl;
+    }
+
 }

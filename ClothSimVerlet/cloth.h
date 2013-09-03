@@ -23,6 +23,13 @@ struct NeighbourData
 	float ks, kd;
 };
 
+struct Object
+{
+	unsigned int type;
+	float3 pos;
+	float4 data;
+};
+
 struct TrianglePairData
 {
 	float4 N[2];
@@ -42,6 +49,7 @@ public:
 	{
 		upper_corners,
 		upper_edge,
+		corners,
 		num_fixed_pos
 	};
 
@@ -56,6 +64,8 @@ public:
 	{
 		wind = !wind;
 	}
+
+	void pick( float3 camera_pos, float3 ray );
 
 private:
     starting_position start_pos;

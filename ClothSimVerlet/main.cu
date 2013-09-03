@@ -77,7 +77,9 @@ GLuint normal_sign_id;
 
 GLuint tex_normal_map, tex_normal_map_id;
 
-float3 ray;
+//ball
+float ball_pos[] = {0.0, -7.0, 2.0};
+bool ball_exists = false;
 
 enum Mouse_mode
 {
@@ -87,9 +89,16 @@ enum Mouse_mode
 
 Mouse_mode mouse_mode = Mouse_mode::camera_mode;
 
-void update_ray_picker(int x, int y)
+float3 ray;
+
+void ray_picker(int x, int y)
 {
-	//glm::unProject( 
+	glm::vec3 n,f;
+	n = glm::unProject( glm::vec3( x, w_height - y - 1, 0.0f ), V * M, P, glm::vec4( 0, 0, w_width, w_height ) );
+	f = glm::unProject( glm::vec3( x, w_height - y - 1, 1.0f ), V * M, P, glm::vec4( 0, 0, w_width, w_height ) );
+	
+	ray = make_float3( f.x - n.x, f.y - n.y, f.z - n.z );
+	cloth->pick( make_float3( camera_pos.x, camera_pos.y, camera_pos.z ), ray );
 }
 
 bool checkHW(char *name, const char *gpuType, int dev)
@@ -327,7 +336,7 @@ int main( int argc, char **argv )
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 8, 8 ), 250.25f, 0.25f, 0.02f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 16, 16 ), 250.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 32, 32 ), 250.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
-	cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 250.25f, 0.125f, 0.015f, -0.0125f, 1024.0f );
+	cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 250.25f, 0.125f, 0.00015f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 64, 64 ), 50.25f, 0.25f, 0.01f, -0.0125f, 1024.0f );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 128, 128 ), 200.25f, 0.25f, 0.008f, -0.0125f, 1024.0f * 3 );
 	//cloth = new Cloth( make_uint2( 15, 15 ), make_uint2( 128, 128 ), 200.25f, 0.40f, 0.008f, -0.0125f, 1024.0f );
@@ -405,8 +414,12 @@ void keyboard(unsigned char key, int x, int y)
 void mouse(int button, int state, int x, int y)
 {
 	std::cout<<x<<" "<<y<<std::endl;
-    if (state == GLUT_DOWN)
+	if (state == GLUT_DOWN)
     {
+		if( button == GLUT_LEFT_BUTTON )
+		{
+			ray_picker( x, y );
+		}
         if( button == 3 )
         {
             radius -= 0.5;
@@ -491,7 +504,7 @@ void display()
 	glUniformMatrix4fv( view_matrixID, 1, GL_FALSE, &V[0][0] );
 	glUniform4fv( light_posID, 1, &light_pos[0] ); 
 
-    cloth->draw(); 
+    cloth->draw();
 	//current_time = glutGet( GLUT_ELAPSED_TIME );
 	//light_pos[0] = 20.0f * sin( current_time / 350 );
 	glUseProgram( 0 );

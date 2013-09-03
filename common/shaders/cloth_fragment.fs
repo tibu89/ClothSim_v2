@@ -63,6 +63,10 @@ void main()
 	
 	float cos_theta = clamp( dot( n, l ), 0, 1 );
 	
+	/*if( cos_theta < 0.25 ) cos_theta = 0.0f;
+	else if( cos_theta < 0.75 ) cos_theta = 0.5f;
+	else cos_theta = 1.0f;*/
+	
 	color = material_ambient_color + material_diffuse_color * light_color * cos_theta;
 	//color = n;
 }
